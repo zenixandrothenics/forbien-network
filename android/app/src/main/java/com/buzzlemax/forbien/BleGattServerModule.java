@@ -57,6 +57,10 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
     private BluetoothGattServer gattServer;
     private AdvertiseCallback advertiseCallback;
 
+    private Promise pendingServicePromise;
+    private boolean isServiceRegistered = false;
+    private final Object writeLock = new Object();
+
     public BleGattServerModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
@@ -88,7 +92,7 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void startGattServer(Promise promise) {
+    public synchronized void startGattServer(final Promise promise) {
         try {
             bluetoothManager = (BluetoothManager) reactContext.getSystemService(Context.BLUETOOTH_SERVICE);
             Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] BluetoothManager available: " + (bluetoothManager != null));
@@ -103,10 +107,25 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
                 return;
             }
 
+            // Check if service is already registered and server is running
+            if (gattServer != null && isServiceRegistered && gattServer.getService(UUID.fromString(SERVICE_UUID)) != null) {
+                Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] GATT Server already running with primary service active");
+                promise.resolve(true);
+                return;
+            }
+
             if (gattServer != null) {
                 Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] Closing existing GATT Server instance");
-                gattServer.close();
+                try {
+                    gattServer.close();
+                } catch (Exception ignored) {}
                 gattServer = null;
+                isServiceRegistered = false;
+            }
+
+            if (pendingServicePromise != null) {
+                pendingServicePromise.reject("ERR_SUPERSEDED", "Superseded by new startGattServer invocation");
+                pendingServicePromise = null;
             }
 
             gattServer = bluetoothManager.openGattServer(reactContext, gattServerCallback);
@@ -128,17 +147,22 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
             );
 
             service.addCharacteristic(characteristic);
-            boolean added = gattServer.addService(service);
 
-            if (added) {
-                Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] GATT Server started & primary service 128-bit UUID added: " + SERVICE_UUID);
-                promise.resolve(true);
+            pendingServicePromise = promise;
+
+            boolean added = gattServer.addService(service);
+            if (!added) {
+                pendingServicePromise = null;
+                isServiceRegistered = false;
+                Log.e(TAG, "[BLE_GATT_SERVER_AUDIT] addService returned false immediately for service: " + SERVICE_UUID);
+                promise.reject("ERR_ADD_SERVICE", "Failed to initiate GATT Service addition");
             } else {
-                Log.e(TAG, "[BLE_GATT_SERVER_AUDIT] Failed to add GATT Service 128-bit UUID: " + SERVICE_UUID);
-                promise.reject("ERR_ADD_SERVICE", "Failed to add GATT Service");
+                Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] Service addition initiated. Awaiting onServiceAdded callback...");
             }
         } catch (Exception e) {
             Log.e(TAG, "[BLE_GATT_SERVER_AUDIT] Error starting GATT Server", e);
+            pendingServicePromise = null;
+            isServiceRegistered = false;
             promise.reject("ERR_START_GATT", e.getMessage());
         }
     }
@@ -265,8 +289,13 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void stopGattServer(Promise promise) {
+    public synchronized void stopGattServer(Promise promise) {
         try {
+            if (pendingServicePromise != null) {
+                pendingServicePromise.reject("ERR_STOP_GATT", "GATT Server stopped while addition was pending");
+                pendingServicePromise = null;
+            }
+            isServiceRegistered = false;
             if (gattServer != null) {
                 gattServer.close();
                 gattServer = null;
@@ -279,6 +308,26 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
     }
 
     private final BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+        @Override
+        public void onServiceAdded(int status, BluetoothGattService service) {
+            super.onServiceAdded(status, service);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                isServiceRegistered = true;
+                Log.d(TAG, "[BLE_GATT_SERVER_AUDIT] GATT Service registered successfully with Android stack: " + service.getUuid().toString());
+                if (pendingServicePromise != null) {
+                    pendingServicePromise.resolve(true);
+                    pendingServicePromise = null;
+                }
+            } else {
+                isServiceRegistered = false;
+                Log.e(TAG, "[BLE_GATT_SERVER_AUDIT] GATT Service registration failed with status: " + status);
+                if (pendingServicePromise != null) {
+                    pendingServicePromise.reject("ERR_ADD_SERVICE", "onServiceAdded failed with status code " + status);
+                    pendingServicePromise = null;
+                }
+            }
+        }
+
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             super.onConnectionStateChange(device, status, newState);
@@ -308,28 +357,30 @@ public class BleGattServerModule extends ReactContextBaseJavaModule {
             }
 
             if (value != null && value.length > 0) {
-                String rawStr = new String(value, StandardCharsets.UTF_8);
-                if (rawStr.trim().equals("FORBIEN_PING")) {
-                    Log.d(TAG, "[FORBIEN_PING_RECEIVED]\nfrom = " + device.getAddress());
-                    WritableMap pingParams = Arguments.createMap();
-                    pingParams.putString("deviceId", device.getAddress());
-                    pingParams.putString("deviceName", device.getName() != null ? device.getName() : "Unknown");
-                    pingParams.putString("dataBase64", Base64.encodeToString("FORBIEN_PONG".getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
-                    pingParams.putString("type", "PONG");
-                    sendEvent("onBleCharacteristicWrite", pingParams);
-                    return;
-                }
-                if (rawStr.trim().equals("FORBIEN_PONG")) {
-                    Log.d(TAG, "[FORBIEN_PONG_RECEIVED]\nfrom = " + device.getAddress());
-                }
+                synchronized (writeLock) {
+                    String rawStr = new String(value, StandardCharsets.UTF_8);
+                    if (rawStr.trim().equals("FORBIEN_PING")) {
+                        Log.d(TAG, "[FORBIEN_PING_RECEIVED]\nfrom = " + device.getAddress());
+                        WritableMap pingParams = Arguments.createMap();
+                        pingParams.putString("deviceId", device.getAddress());
+                        pingParams.putString("deviceName", device.getName() != null ? device.getName() : "Unknown");
+                        pingParams.putString("dataBase64", Base64.encodeToString("FORBIEN_PONG".getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+                        pingParams.putString("type", "PONG");
+                        sendEvent("onBleCharacteristicWrite", pingParams);
+                        return;
+                    }
+                    if (rawStr.trim().equals("FORBIEN_PONG")) {
+                        Log.d(TAG, "[FORBIEN_PONG_RECEIVED]\nfrom = " + device.getAddress());
+                    }
 
-                String base64Data = Base64.encodeToString(value, Base64.NO_WRAP);
-                WritableMap params = Arguments.createMap();
-                params.putString("deviceId", device.getAddress());
-                params.putString("deviceName", device.getName() != null ? device.getName() : "PeerUnit");
-                params.putString("dataBase64", base64Data);
-                params.putString("characteristicUuid", characteristic.getUuid().toString());
-                sendEvent("onBleCharacteristicWrite", params);
+                    String base64Data = Base64.encodeToString(value, Base64.NO_WRAP);
+                    WritableMap params = Arguments.createMap();
+                    params.putString("deviceId", device.getAddress());
+                    params.putString("deviceName", device.getName() != null ? device.getName() : "PeerUnit");
+                    params.putString("dataBase64", base64Data);
+                    params.putString("characteristicUuid", characteristic.getUuid().toString());
+                    sendEvent("onBleCharacteristicWrite", params);
+                }
             }
         }
 

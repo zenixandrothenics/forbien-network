@@ -7,6 +7,9 @@
   <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
   <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
   
+  <!-- Required Bluetooth Low Energy hardware feature -->
+  <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
+
   <!-- Modern Bluetooth permissions for Android 12+ -->
   <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
   <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>

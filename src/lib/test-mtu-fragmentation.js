@@ -46,15 +46,24 @@ function runMtuTests() {
   };
 
   testMtuValues.forEach((mtu) => {
-    console.log(`\n--- Testing MTU ${mtu} (Usable ATT Write Payload <= ${mtu - 3} bytes) ---`);
+    const attPayload = mtu - 3;
+    // Calculate usable payload size for this MTU (matching meshLogic.js logic)
+    const fragSize = Math.max(3, attPayload - 17);
+    console.log(`\n--- Testing MTU ${mtu} (Usable ATT Write Payload <= ${attPayload} bytes, fragPayload=${fragSize}B) ---`);
 
-    const fragments = fragmentPacket(sampleLargePayload);
+    const fragments = fragmentPacket(sampleLargePayload, fragSize);
     assert(fragments.length > 0, `Generated ${fragments.length} fragment(s) for MTU ${mtu}`);
+
+    if (mtu === 23) {
+      assert(fragments.length <= 300, `MTU 23 fallback payload generated correct fragment count (${fragments.length} <= 300 at 3B payload/frag, non-1-byte fallback)`);
+    }
 
     let reassembled = null;
     fragments.forEach((fragStr, idx) => {
-      // Check fragment length doesn't exceed MTU payload budget when base64 encoded
-      const result = reassembleFragment(fragStr);
+      // MANDATORY VERIFICATION: Every fragment string length MUST NOT exceed attPayload (mtu - 3)
+      assert(fragStr.length <= attPayload, `Fragment ${idx + 1}/${fragments.length} length (${fragStr.length}B) <= ATT payload limit (${attPayload}B) for MTU ${mtu}`);
+
+      const result = reassembleFragment(fragStr, 'PEER_TEST_NODE');
       if (idx === fragments.length - 1) {
         reassembled = result;
       } else {

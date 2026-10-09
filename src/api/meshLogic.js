@@ -160,22 +160,19 @@ export const MESH_CHARACTERISTIC_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E';
 
 // [B3 Fix] FRAG string format: FRAG|{3-char-id}|{seq}|{total}|{data}
 // Actual bytes written via BLE = FRAG string length (btoa + ble-plx decode cancel out).
-// Worst-case header: "FRAG|"(5) + 3-char-fragId(3) + "|"(1) + 4-digit-seq(4) +
-//                   "|"(1) + 4-digit-total(4) + "|"(1) = 19 chars
-// Therefore: max safe fragSize = attPayload - 19
-const FRAG_PROTOCOL_OVERHEAD = 19;
-// Conservative fallback for unknown MTU: safe for minimum ATT payload (MTU 23 -> attPayload=20)
-// max(1, 20 - 19) = 1  (avoids crash; efficiency is poor on MTU 23 but correctness is preserved)
-const DEFAULT_SAFE_FRAGMENT_SIZE = 1;
+// Worst-case header size: "FRAG|"(5) + 3-char-fragId(3) + "|"(1) + 3-digit-seq(3) + "|"(1) + 3-digit-total(3) + "|"(1) = 17 chars
+// For MTU 23: ATT PDU payload = 23 - 3 = 20 bytes.
+// Safe fallback payload per fragment = attPayload - 17 = 3 bytes.
+const FRAG_PROTOCOL_OVERHEAD = 17;
+const DEFAULT_SAFE_FRAGMENT_SIZE = 3;
 
 function getFragmentPayloadSize(peerId) {
   const conn = activeConnections.get(peerId);
-  if (!conn || !conn.mtu) return DEFAULT_SAFE_FRAGMENT_SIZE;
+  const mtu = (conn && conn.mtu) ? conn.mtu : 23;
   // ATT PDU overhead: 1 byte opcode + 2 bytes handle = 3 bytes
-  const attPayload = conn.mtu - 3;
-  // Ensure at least 1 byte of data per fragment; FRAG_PROTOCOL_OVERHEAD accounts for all
-  // fixed header bytes so that: FRAG string length = FRAG_PROTOCOL_OVERHEAD + fragSize <= attPayload
-  return Math.max(1, attPayload - FRAG_PROTOCOL_OVERHEAD);
+  const attPayload = mtu - 3;
+  // Ensure every fragment string (header + chunk) strictly fits inside attPayload
+  return Math.max(DEFAULT_SAFE_FRAGMENT_SIZE, attPayload - FRAG_PROTOCOL_OVERHEAD);
 }
 
 // Throttling intervals for battery preservation
