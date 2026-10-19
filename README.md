@@ -5,7 +5,7 @@
 [![Licence: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-5a189a)](./LICENSE)
 [![Built with Expo & React Native](https://img.shields.io/badge/built_with-Expo%20%2B%20React%20Native-000020?logo=expo)](https://expo.dev)
 [![Android](https://img.shields.io/badge/platform-Android-4285F4?logo=android)](https://developer.android.com)
-[![Release v1.0.0](https://img.shields.io/badge/release-v1.0.0-2ea443)](https://github.com/BuzzleMax/forbien-network/releases/tag/v1.0.0)
+[![Release v1.0.0](https://img.shields.io/badge/release-v1.0.0-2ea443)](https://github.com/zenixandrothenics/forbien-network/releases/tag/v1.0.0)
 
 ForBien is an emergency-communication Android application that lets nearby devices exchange SOS and emergency messages over **Bluetooth Low Energy (BLE) mesh networking** — with no internet, no cellular service, and no cloud dependency required for device-to-device messaging. Messages are encrypted, relayed between intermediate devices, and persisted locally so they can be delivered once a path to a headquarters (HQ) node exists.
 
@@ -132,7 +132,7 @@ The technologies below are those actually used in the repository, taken from `pa
 **Clone the repository**
 
 ```bash
-git clone https://github.com/BuzzleMax/forbien-network.git
+git clone https://github.com/zenixandrothenics/forbien-network.git
 cd forbien-network
 ```
 
@@ -246,7 +246,7 @@ Before contributing, confirm you are comfortable licensing your contributions un
 ForBien is licensed under the **PolyForm Noncommercial License 1.0.0**.
 
 - Official licence text: https://polyformproject.org/licenses/noncommercial/1.0.0
-- Repository: https://github.com/BuzzleMax/forbien-network
+- Repository: https://github.com/zenixandrothenics/forbien-network
 - Licence file in this repository: [./LICENSE](./LICENSE)
 
 **Plain-language terms:**
@@ -259,7 +259,7 @@ ForBien is licensed under the **PolyForm Noncommercial License 1.0.0**.
 
 You must follow the complete licence terms, including its applicable notice and redistribution requirements. The complete, unmodified licence text is in [LICENSE](./LICENSE).
 
-**Project credit (separate from the licence's enforceable terms):** this project is developed under the BuzzleMax organisation (https://github.com/BuzzleMax). The project website credits Swapnanil Dowarah as the creator. This credit request is a community courtesy and is not an enforceable term of the PolyForm licence.
+**Project credit (separate from the licence's enforceable terms):** ForBien was created by Swapnanil Dowarah (https://github.com/zenixandrothenics). The BuzzleMax name remains in historical references and the Android package identifier; this credit request is a community courtesy and is not an enforceable term of the PolyForm licence.
 
 Third-party dependencies in `node_modules` are subject to their own licences and are **not** covered by this LICENSE.
 
@@ -275,9 +275,9 @@ Users must not rely on ForBien as their sole means of requesting assistance. Alw
 
 ## Credits and contact
 
-- Repository: https://github.com/BuzzleMax/forbien-network
-- Issues / bug reports: https://github.com/BuzzleMax/forbien-network/issues
-- Organisation: https://github.com/BuzzleMax
+- Repository: https://github.com/zenixandrothenics/forbien-network
+- Issues / bug reports: https://github.com/zenixandrothenics/forbien-network/issues
+- Organisation: https://github.com/zenixandrothenics
 - Project website credit: Swapnanil Dowarah (per the project landing page)
 
 No individual email addresses, additional contributors, or partnership organisations are claimed in this README. For contact, open an issue in the repository above.

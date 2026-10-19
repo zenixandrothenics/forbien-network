@@ -12,11 +12,16 @@ import { colors } from '../theme/colors';
 import { useApp } from '../context/AppContext';
 import * as mesh from '../api/meshLogic';
 
-export function ChatScreen() {
+export function ChatScreen({ route }) {
   const { isMeshMode, userRole } = useApp();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [hasDiscoveredPeers, setHasDiscoveredPeers] = useState(false);
+
+  // Extract navigation parameters
+  const targetChatId = route?.params?.chatId;
+  const isGroupChat = !!route?.params?.openGroupId || !targetChatId;
+  const destId = isGroupChat ? 'BROADCAST' : targetChatId;
 
   useEffect(() => {
     const status = mesh.getMeshStatus();
@@ -27,6 +32,11 @@ export function ChatScreen() {
         const st = mesh.getMeshStatus();
         setHasDiscoveredPeers(st.peers && st.peers.length > 0);
       } else if (event === 'message') {
+        // Only accept messages destined for us (or broadcast)
+        if (payload.destinationNodeId && payload.destinationNodeId !== 'BROADCAST' && payload.destinationNodeId !== mesh.getLocalNodeId() && userRole !== 'HQ') {
+          return; // Skip messages not meant for this node, if somehow delivered
+        }
+        
         const isHQ = userRole === 'HQ' || userRole === 'Headquarters';
         let displayText = payload.text;
         let displayMeta = payload.meta || {};
@@ -80,7 +90,7 @@ export function ChatScreen() {
     };
     setMessages((prev) => [...prev, newMsg]);
     setInput('');
-    await mesh.sendToGroup('mesh_offline_broadcast', { text, type: 'regular' });
+    await mesh.sendToGroup('mesh_offline_broadcast', { text, type: 'regular', destinationNodeId: destId });
   };
 
   return (
@@ -108,6 +118,23 @@ export function ChatScreen() {
             ]}
           >
             <Text style={styles.bubbleText}>{item.text}</Text>
+            {item.meta?.latitude && item.meta?.longitude && (
+              <View style={styles.locationContainer}>
+                <Text style={styles.locationText}>
+                  📍 GPS: {item.meta.latitude.toFixed(4)}, {item.meta.longitude.toFixed(4)}
+                </Text>
+                {item.meta.accuracy && (
+                  <Text style={styles.locationSubText}>
+                    Accuracy: ±{Math.round(item.meta.accuracy)}m
+                  </Text>
+                )}
+                {item.meta.timestamp && (
+                  <Text style={styles.locationSubText}>
+                    Fix Time: {new Date(item.meta.timestamp).toLocaleTimeString()}
+                  </Text>
+                )}
+              </View>
+            )}
             <View style={styles.messageMeta}>
               {item.encrypted && (
                 <View style={styles.encryptionBadge}>
@@ -201,6 +228,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
     flexWrap: 'wrap',
+  },
+  locationContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  locationText: {
+    color: colors.silver,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  locationSubText: {
+    color: colors.silverDim,
+    fontSize: 11,
+    marginTop: 2,
   },
   encryptionBadge: {
     alignSelf: 'flex-start',

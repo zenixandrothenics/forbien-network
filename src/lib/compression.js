@@ -305,6 +305,16 @@ export function compressSOSData(sosData) {
   if (sosData.latitude !== undefined && sosData.longitude !== undefined) {
     parts.push(`C:${compressNumber(sosData.latitude)},${compressNumber(sosData.longitude)}`);
   }
+
+  // Compress altitude
+  if (sosData.altitude !== undefined) {
+    parts.push(`ALT:${compressNumber(sosData.altitude)}`);
+  }
+
+  // Compress accuracy
+  if (sosData.accuracy !== undefined) {
+    parts.push(`ACC:${compressNumber(sosData.accuracy)}`);
+  }
   
   // Compress status
   if (sosData.status) {
@@ -359,6 +369,12 @@ export function decompressSOSData(compressed) {
         const coords = value.split(',');
         result.latitude = decompressNumber(coords[0]);
         result.longitude = decompressNumber(coords[1]);
+        break;
+      case 'ALT':
+        result.altitude = decompressNumber(value);
+        break;
+      case 'ACC':
+        result.accuracy = decompressNumber(value);
         break;
       case 'S':
         result.status = decompressSOSMessage(value);

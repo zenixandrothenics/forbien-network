@@ -158,6 +158,14 @@ function cleanupFragmentBuffers() {
 export const MESH_SERVICE_UUID = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
 export const MESH_CHARACTERISTIC_UUID = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E';
 
+export function normalizeUuid(uuid) {
+  if (typeof uuid !== 'string') return '';
+  const lower = uuid.toLowerCase();
+  if (lower.length === 4) return `0000${lower}-0000-1000-8000-00805f9b34fb`;
+  if (lower.length === 8) return `${lower}-0000-1000-8000-00805f9b34fb`;
+  return lower;
+}
+
 // [B3 Fix] FRAG string format: FRAG|{3-char-id}|{seq}|{total}|{data}
 // Actual bytes written via BLE = FRAG string length (btoa + ble-plx decode cancel out).
 // Worst-case header size: "FRAG|"(5) + 3-char-fragId(3) + "|"(1) + 3-digit-seq(3) + "|"(1) + 3-digit-total(3) + "|"(1) = 17 chars
@@ -802,12 +810,22 @@ export async function stopBroadcast() {
  */
 export async function handleIncomingRawBLEData(rawString, senderInfo = 'BLE_Peer') {
   let decodedStr = rawString;
-  try {
-    if (typeof atob === 'function' && !rawString.startsWith('FRAG|') && !rawString.startsWith('{')) {
-      decodedStr = atob(rawString);
+  if (!rawString.startsWith('FRAG|') && !rawString.startsWith('{')) {
+    try {
+      if (typeof atob === 'function') {
+        decodedStr = decodeURIComponent(escape(atob(rawString)));
+      } else {
+        const bytes = base64ToUint8(rawString);
+        let str = '';
+        for (let i = 0; i < bytes.length; i++) {
+          str += String.fromCharCode(bytes[i]);
+        }
+        decodedStr = decodeURIComponent(escape(str));
+      }
+    } catch (err) {
+      console.warn('[BLE Inbound Alert] Base64 decoding failed for raw payload:', rawString.substring(0, 50));
+      return { ok: false, error: 'Malformed BLE payload: failed to decode Base64' };
     }
-  } catch {
-    decodedStr = rawString;
   }
 
   let packet = null;
@@ -887,7 +905,7 @@ export async function processIncomingPacket(packet, senderInfo = 'BLE_Peer') {
 
   const localId = getLocalNodeId();
   const destId = packet.destinationNodeId || HQ_NODE_ID;
-  const isTargetDestination = (localId === destId) || (currentRole === NODE_ROLES.HQ && destId === HQ_NODE_ID);
+  const isTargetDestination = (localId === destId) || (currentRole === NODE_ROLES.HQ && destId === HQ_NODE_ID) || (destId === 'BROADCAST');
 
 
   // STEP 3: DESTINATION MATCHING & HQ DELIVERY
@@ -974,11 +992,13 @@ export async function processIncomingPacket(packet, senderInfo = 'BLE_Peer') {
     emit('message', deliveredMessage);
     emit('packet_received', deliveredMessage);
 
-    // CRITICAL: DESTINATION REACHED — DO NOT FORWARD FURTHER! HALT RELAY!
-    return { ok: true, delivered: true, message: deliveredMessage };
+    if (destId !== 'BROADCAST') {
+      // CRITICAL: DESTINATION REACHED — DO NOT FORWARD FURTHER! HALT RELAY!
+      return { ok: true, delivered: true, message: deliveredMessage };
+    }
   }
 
-  // STEP 4: INTERMEDIATE RELAY (destinationNodeId !== localNodeId)
+  // STEP 4: INTERMEDIATE RELAY (destinationNodeId !== localNodeId or BROADCAST)
   // Check TTL / Max Hops
   const maxHops = packet.maxHops || 5;
   const currentHopCount = packet.hopCount || 0;
@@ -1399,6 +1419,9 @@ export async function sendToGroup(groupId, payload) {
   const originNodeId = getLocalNodeId();
   const timestamp = Date.now(); // [B1 Fix] Single reference — used for both AAD ts and entry.ts
 
+  // Add the newly created message to our deduplication cache immediately to prevent self-echos
+  processedMessageIds.set(messageId, timestamp);
+
   if (meshEnabled) {
     if (payload.type === 'SOS' || payload.text?.toLowerCase().includes('sos')) {
       const sosData = {
@@ -1407,9 +1430,11 @@ export async function sendToGroup(groupId, payload) {
         location: payload.meta?.location,
         latitude: payload.meta?.latitude,
         longitude: payload.meta?.longitude,
+        altitude: payload.meta?.altitude,
+        accuracy: payload.meta?.accuracy,
         status: payload.meta?.status,
         priority: payload.meta?.priority,
-        timestamp: Date.now(),
+        timestamp: payload.meta?.timestamp || Date.now(),
         unitId: payload.meta?.unitId,
       };
 
@@ -1856,12 +1881,14 @@ export async function createOfflineEmergencyMessage(options = {}) {
     message: message,
     latitude: locationData.latitude,
     longitude: locationData.longitude,
+    altitude: locationData.altitude,
+    accuracy: locationData.accuracy,
     location: locationData.available 
       ? `GPS (${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)})`
       : 'Location Unavailable',
     locationAvailable: locationData.available,
     status: 'critical',
-    timestamp,
+    timestamp: locationData.available ? locationData.timestamp : timestamp,
     unitId: originNodeId,
   };
 
